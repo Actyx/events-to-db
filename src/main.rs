@@ -6,7 +6,7 @@ use db::{Db, DbConnection, DbEvent};
 use futures::{future::FutureExt, stream::StreamExt};
 use futures_batch::ChunksTimeoutStreamExt;
 use serde::{Deserialize, Serialize};
-use std::{env, time::Duration};
+use std::time::Duration;
 use structopt::StructOpt;
 use tokio_compat_02::FutureExt as FutureExt02;
 use tracing::*;
@@ -21,11 +21,7 @@ mod postgres;
 struct Opt {
     #[structopt(long, short)]
     from_start: bool,
-    #[structopt(
-        long,
-        short = "w",
-        about = "If not provided, read from the PGPASSWORD environment variable"
-    )]
+    #[structopt(long, short = "w", env = "PGPASSWORD", hide_env_values = true)]
     password: Option<String>,
     #[structopt(long, short, default_value = "1024")]
     max_batch_size: usize,
@@ -43,39 +39,28 @@ struct Opt {
     subscriptions: String,
 }
 
-pub fn main() -> Result<()> {
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
+pub async fn main() -> Result<()> {
     env_logger::init();
     init_panic_hook();
     let opt: Opt = Opt::from_args();
-
-    let password = opt
-        .password
-        .unwrap_or_else(|| env::var("PGPASSWORD").expect("Postgres password must be provided"));
 
     let subscriptions: Vec<Subscription> =
         serde_json::from_str(opt.subscriptions.as_str()).unwrap();
     info!("Subscribing to: {:?}", subscriptions);
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .unwrap();
-
     let pg = Postgres::new(
         opt.host,
         opt.port,
         opt.username,
-        password,
+        opt.password.unwrap(),
         opt.db_name,
         opt.table,
     );
 
-    runtime.block_on(run_pipeline(
-        Box::new(pg),
-        subscriptions,
-        opt.max_batch_size,
-    ))
+    run_pipeline(Box::new(pg), subscriptions, opt.max_batch_size)
+        .compat()
+        .await
 }
 
 async fn run_pipeline<C: DbConnection + 'static>(
@@ -86,7 +71,7 @@ async fn run_pipeline<C: DbConnection + 'static>(
     let event_service = EventService::default();
     debug!("Connected to EventService");
 
-    let present = event_service.get_offsets().compat().await?;
+    let present = event_service.get_offsets().await?;
     debug!("Offset map from swarm: {:?}", present);
 
     let db = db.connect().await?;
@@ -102,7 +87,6 @@ async fn run_pipeline<C: DbConnection + 'static>(
 
     event_service
         .subscribe_from(offsets, subscriptions)
-        .compat()
         .await?
         .map(|e| -> DbEvent { e.into() })
         .chunks_timeout(max_batch_size, Duration::new(1, 0))

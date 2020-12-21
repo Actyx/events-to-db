@@ -106,8 +106,8 @@ async fn run_pipeline<C: DbConnection + 'static>(
         .await?
         .map(|e| -> DbEvent { e.into() })
         .chunks_timeout(max_batch_size, Duration::new(1, 0))
-        .for_each(|chunk| db.insert(chunk).map(|x| x.unwrap()))
-        .await;
+        .try_for_each(|chunk| db.insert(chunk))
+        .await?;
 
     Ok(())
 }

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DbEvent {
     pub source: SourceId,
     pub semantics: Semantics,
@@ -31,6 +31,8 @@ impl From<Event<Payload>> for DbEvent {
         }
     }
 }
+
+#[derive(Debug)]
 pub struct DbEventVec {
     pub source: Vec<String>,
     pub semantics: Vec<String>,

@@ -116,11 +116,24 @@ impl DbConnection for PostgresConnection {
 
         debug!("Preparing {} events", items.len());
         let rows: DbEventVec = (&items).into();
+        let rows_suffix = if items.len() > 1 { "s" } else { "" };
 
-        debug!("About to write {} records into DB", items.len());
+        let mut sources = rows.source.clone();
+        sources.sort();
+        sources.dedup();
+        let sources_suffix = if sources.len() > 1 { "s" } else { "" };
+
+        debug!(
+            "About to write {} record{} into DB. Source{}: {}",
+            items.len(),
+            rows_suffix,
+            sources_suffix,
+            sources.join(", "),
+        );
         self.client
             .execute(
                 &self.insert_stmt,
+                // Make sure that the order of the fields here matches the INSERT statement in the connect() method above
                 &[
                     &rows.source,
                     &rows.semantics,
@@ -135,17 +148,20 @@ impl DbConnection for PostgresConnection {
 
         let elapsed = start.elapsed().as_millis() as usize;
         info!(
-            "Wrote {} records into DB in {} ms ({} rows/sec)",
+            "Wrote {} record{} in {} ms ({} records/sec). Source{}: {}",
             items.len(),
+            rows_suffix,
             elapsed,
-            (items.len() as f64 / (elapsed as f64 / 1_000.0)) as u64
+            (items.len() as f64 / (elapsed as f64 / 1_000.0)) as u64,
+            sources_suffix,
+            sources.join(", "),
         );
 
         Ok(())
     }
 
     async fn get_offsets(&self) -> Result<OffsetMap> {
-        info!("Querying initial offset map map");
+        info!("Querying initial offset map");
         let sql = format!(
             "SELECT source, MAX(psn) FROM {} GROUP BY source",
             self.table

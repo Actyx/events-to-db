@@ -19,21 +19,23 @@ mod postgres;
     about = "Insert events into a Postgres database.\nEnvironment variables:\n  PGPASSWORD: PostgreSQL password, if not provided with --password/-p\n  AX_EVENT_SERVICE_URI: URL to connect to the Event Service. Default: http://localhost:4454/api/"
 )]
 struct Opt {
-    #[structopt(long, short)]
+    #[structopt(long, short = "f")]
     from_start: bool,
     #[structopt(long, short = "w", env = "PGPASSWORD", hide_env_values = true)]
     password: Option<String>,
-    #[structopt(long, short, default_value = "1024")]
-    max_batch_size: usize,
-    #[structopt(long, short)]
+    #[structopt(long, short = "r", default_value = "1024")]
+    max_batch_records: usize,
+    #[structopt(long, short = "s", default_value = "1")]
+    max_batch_seconds: u64,
+    #[structopt(long, short = "d")]
     db_name: String,
-    #[structopt(long, short, default_value = "localhost")]
+    #[structopt(long, short = "h", default_value = "localhost")]
     host: String,
-    #[structopt(long, short, default_value = "5432")]
+    #[structopt(long, short = "p", default_value = "5432")]
     port: u16,
-    #[structopt(long, short)]
+    #[structopt(long, short = "u")]
     username: String,
-    #[structopt(long, short, default_value = "events")]
+    #[structopt(long, short = "t", default_value = "events")]
     table: String,
     #[structopt(about = "Subscription set to listen to", default_value = "[{}]")]
     subscriptions: String,
@@ -58,38 +60,43 @@ pub async fn main() -> Result<()> {
         opt.table,
     );
 
-    run_pipeline(Box::new(pg), subscriptions, opt.max_batch_size)
-        .compat()
-        .await
+    run_pipeline(
+        Box::new(pg),
+        subscriptions,
+        opt.max_batch_records,
+        opt.max_batch_seconds,
+    )
+    .compat()
+    .await
 }
 
 async fn run_pipeline<C: DbConnection + 'static>(
     db: Box<dyn Db<C>>,
     subscriptions: Vec<Subscription>,
-    max_batch_size: usize,
+    max_batch_records: usize,
+    max_batch_seconds: u64,
 ) -> Result<()> {
     let event_service = EventService::default();
     debug!("Connected to EventService");
 
-    let present = event_service.get_offsets().await?;
-    debug!("Offset map from swarm: {:?}", present);
+    let store_offsets = event_service.get_offsets().await?;
 
     let db = db.connect().await?;
-    let offsets = db.get_offsets().await?;
-    debug!("Offset map from database: {:?}", offsets);
+    let db_offsets = db.get_offsets().await?;
+    info!("Offset map from database: {:?}", db_offsets);
+    info!("Offset map from store:    {:?}", store_offsets);
 
     info!(
-        "Database has {} events. Swarm has {} events. Getting {} events to get to the present",
-        &offsets.size(),
-        &present.size(),
-        &present - &offsets
+        "Database has {} events. Store has {} events.",
+        &db_offsets.size(),
+        &store_offsets.size()
     );
 
     event_service
-        .subscribe_from(offsets, subscriptions)
+        .subscribe_from(db_offsets, subscriptions)
         .await?
         .map(|e| -> DbEvent { e.into() })
-        .chunks_timeout(max_batch_size, Duration::new(1, 0))
+        .chunks_timeout(max_batch_records, Duration::new(max_batch_seconds, 0))
         .for_each(|chunk| db.insert(chunk).map(|x| x.unwrap()))
         .await;
 

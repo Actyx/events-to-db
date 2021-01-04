@@ -6,4 +6,4 @@ Copies events to a database
 
 - Add tests
 - Documentation
-- One thread per subscription
+- One thread/DB connection per subscription

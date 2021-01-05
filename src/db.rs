@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use actyxos_sdk::{
     event::{Event, FishName, OffsetMap, Semantics, SourceId},
     Offset, Payload, TimeStamp,

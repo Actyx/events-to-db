@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS {} (
 
 ## TODO
 
+- CI integration
 - Add databases other than PostgreSQL
 - Schema migration
 - One thread/DB connection per subscription

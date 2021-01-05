@@ -19,25 +19,29 @@ mod postgres;
     about = "Insert events into a Postgres database.\nEnvironment variables:\n  PGPASSWORD: PostgreSQL password, if not provided with --password/-p\n  AX_EVENT_SERVICE_URI: URL to connect to the Event Service. Default: http://localhost:4454/api/"
 )]
 struct Opt {
-    #[structopt(long, short = "f")]
+    #[structopt(long, short = "f", env = "FROM_START")]
     from_start: bool,
     #[structopt(long, short = "w", env = "PGPASSWORD", hide_env_values = true)]
     password: Option<String>,
-    #[structopt(long, short = "r", default_value = "1024")]
+    #[structopt(long, short = "r", env = "MAX_BATCH_RECORDS", default_value = "1024")]
     max_batch_records: usize,
-    #[structopt(long, short = "s", default_value = "1")]
+    #[structopt(long, short = "s", env = "MAX_BATCH_SECONDS", default_value = "1")]
     max_batch_seconds: u64,
-    #[structopt(long, short = "d")]
+    #[structopt(long, short = "d", env = "DB_NAME")]
     db_name: String,
-    #[structopt(long, short = "h", default_value = "localhost")]
+    #[structopt(long, short = "h", env = "DB_HOST", default_value = "localhost")]
     host: String,
-    #[structopt(long, short = "p", default_value = "5432")]
+    #[structopt(long, short = "p", env = "DB_PORT", default_value = "5432")]
     port: u16,
-    #[structopt(long, short = "u")]
+    #[structopt(long, short = "u", env = "DB_USER")]
     username: String,
-    #[structopt(long, short = "t", default_value = "events")]
+    #[structopt(long, short = "t", env = "DB_TABLE", default_value = "events")]
     table: String,
-    #[structopt(about = "Subscription set to listen to", default_value = "[{}]")]
+    #[structopt(
+        about = "Subscription set to listen to",
+        env = "SUBSCRIPTIONS",
+        default_value = "[{}]"
+    )]
     subscriptions: String,
 }
 

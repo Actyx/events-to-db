@@ -3,6 +3,7 @@ use actyxos_sdk::event_service::{EventService, Subscription};
 use anyhow::Result;
 use backtrace::Backtrace;
 use db::{Db, DbConnection, DbEvent};
+use env_logger::Env;
 use futures::{future::FutureExt, stream::StreamExt};
 use futures_batch::ChunksTimeoutStreamExt;
 use serde::{Deserialize, Serialize};
@@ -52,7 +53,7 @@ fn parse_subscriptions(subs: &str) -> Result<Subscription, serde_json::Error> {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 pub async fn main() -> Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     init_panic_hook();
     let opt: Opt = Opt::from_args();
 

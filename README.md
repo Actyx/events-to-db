@@ -47,7 +47,9 @@ Subscriptions are OR'ed together and NULL/nonexistent elements are considered wi
 
 Aside from the environment variables listed under `events-to-db --help`, there is the following:
 
-`AX_EVENT_SERVICE_URI`: URL to connect to the Event Service. Default: http://localhost:4454/api/
+- `AX_EVENT_SERVICE_URI`: URL to connect to the Event Service. Default: http://localhost:4454/api/
+- `RUST_LOG`: Set to control the log level, as per the [env_logger crate](https://docs.rs/env_logger/0.8.2/env_logger/).
+  The default is set to `info`.
 
 ## Database schema
 

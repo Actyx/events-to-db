@@ -85,7 +85,8 @@ impl Db<PostgresConnection> for Postgres {
 
         let sql = format!(
             r#"INSERT INTO {} (source, semantics, name, seq, psn, timestamp, payload)
-                 SELECT * FROM unnest($1,$2,$3,$4,$5,$6,$7)"#,
+                 SELECT * FROM unnest($1,$2,$3,$4,$5,$6,$7)
+                 ON CONFLICT DO NOTHING"#,
             &self.table
         );
         let types = vec![

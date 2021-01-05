@@ -16,33 +16,38 @@ mod postgres;
 
 #[derive(StructOpt, Debug, Serialize, Deserialize)]
 #[structopt(
-    about = "Insert events into a Postgres database.\nEnvironment variables:\n  PGPASSWORD: PostgreSQL password, if not provided with --password/-p\n  AX_EVENT_SERVICE_URI: URL to connect to the Event Service. Default: http://localhost:4454/api/"
+    about = "Insert events into a Postgres database.\nEnvironment variables:\n  AX_EVENT_SERVICE_URI: URL to connect to the Event Service. Default: http://localhost:4454/api/"
 )]
 struct Opt {
-    #[structopt(long, short = "f", env = "FROM_START")]
+    #[structopt(long, short = "f", takes_value = false, env = "FROM_START")]
     from_start: bool,
-    #[structopt(long, short = "w", env = "PGPASSWORD", hide_env_values = true)]
-    password: Option<String>,
-    #[structopt(long, short = "r", env = "MAX_BATCH_RECORDS", default_value = "1024")]
+    #[structopt(long, short = "r", env, default_value = "1024")]
     max_batch_records: usize,
-    #[structopt(long, short = "s", env = "MAX_BATCH_SECONDS", default_value = "1")]
+    #[structopt(long, short = "s", env, default_value = "1")]
     max_batch_seconds: u64,
-    #[structopt(long, short = "d", env = "DB_NAME")]
+    #[structopt(long, short = "d", env)]
     db_name: String,
-    #[structopt(long, short = "h", env = "DB_HOST", default_value = "localhost")]
-    host: String,
-    #[structopt(long, short = "p", env = "DB_PORT", default_value = "5432")]
-    port: u16,
-    #[structopt(long, short = "u", env = "DB_USER")]
-    username: String,
-    #[structopt(long, short = "t", env = "DB_TABLE", default_value = "events")]
+    #[structopt(long, short = "h", env, default_value = "localhost")]
+    db_host: String,
+    #[structopt(long, short = "p", env, default_value = "5432")]
+    db_port: u16,
+    #[structopt(long, short = "u", env)]
+    db_user: String,
+    #[structopt(long, short = "w", env, hide_env_values = true)]
+    db_password: String,
+    #[structopt(long, short = "t", env, default_value = "events")]
     table: String,
     #[structopt(
-        about = "Subscription set to listen to",
-        env = "SUBSCRIPTIONS",
-        default_value = "[{}]"
+        about = "Subscriptions to subscribe to",
+        env,
+        parse(try_from_str = parse_subscriptions),
+        default_value = "{}"
     )]
-    subscriptions: String,
+    subscriptions: Vec<Subscription>,
+}
+
+fn parse_subscriptions(subs: &str) -> Result<Subscription, serde_json::Error> {
+    serde_json::from_str(subs)
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
@@ -51,22 +56,20 @@ pub async fn main() -> Result<()> {
     init_panic_hook();
     let opt: Opt = Opt::from_args();
 
-    let subscriptions: Vec<Subscription> =
-        serde_json::from_str(opt.subscriptions.as_str()).unwrap();
-    info!("Subscribing to: {:?}", subscriptions);
+    info!("Subscribing to: {:?}", opt.subscriptions);
 
     let pg = Postgres::new(
-        opt.host,
-        opt.port,
-        opt.username,
-        opt.password.unwrap(),
+        opt.db_host,
+        opt.db_port,
+        opt.db_user,
+        opt.db_password,
         opt.db_name,
         opt.table,
     );
 
     run_pipeline(
         Box::new(pg),
-        subscriptions,
+        opt.subscriptions,
         opt.max_batch_records,
         opt.max_batch_seconds,
     )

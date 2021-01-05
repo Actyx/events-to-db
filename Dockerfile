@@ -25,7 +25,8 @@ RUN PKG_CONFIG_ALLOW_CROSS=1 OPENSSL_STATIC=true OPENSSL_DIR=/musl cargo build -
 
 # 1c: Build the binary using the actual source code
 COPY src ./src
-RUN PKG_CONFIG_ALLOW_CROSS=1 OPENSSL_STATIC=true OPENSSL_DIR=/musl cargo build --release --target x86_64-unknown-linux-musl
+RUN touch src/* && \
+  PKG_CONFIG_ALLOW_CROSS=1 OPENSSL_STATIC=true OPENSSL_DIR=/musl cargo build --release --target x86_64-unknown-linux-musl
 
 # 2: Copy the binary  to an empty Docker image
 FROM scratch

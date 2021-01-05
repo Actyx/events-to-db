@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use actyxos_sdk::{
     event::{Event, FishName, OffsetMap, Semantics, SourceId},
     Offset, Payload, TimeStamp,
@@ -32,7 +34,7 @@ impl From<Event<Payload>> for DbEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DbEventVec {
     pub source: Vec<String>,
     pub semantics: Vec<String>,
@@ -81,4 +83,51 @@ pub trait Db<C: DbConnection> {
 pub trait DbConnection {
     async fn insert(&self, items: Vec<DbEvent>) -> Result<()>;
     async fn get_offsets(&self) -> Result<OffsetMap>;
+}
+
+#[test]
+fn convert_db_event_to_db_event_vec() {
+    let events = vec![
+        DbEvent {
+            source: "foo".try_into().unwrap(),
+            semantics: "foo.semantics".try_into().unwrap(),
+            name: "foo.name".try_into().unwrap(),
+            seq: 10,
+            psn: 11.try_into().unwrap(),
+            timestamp: 12.try_into().unwrap(),
+            payload: serde_json::from_str(r#"{"foo":"foo"}"#).unwrap(),
+        },
+        DbEvent {
+            source: "bar".try_into().unwrap(),
+            semantics: "bar.semantics".try_into().unwrap(),
+            name: "bar.name".try_into().unwrap(),
+            seq: 20,
+            psn: 21.try_into().unwrap(),
+            timestamp: 22.try_into().unwrap(),
+            payload: serde_json::from_str(r#"{"bar":"bar"}"#).unwrap(),
+        },
+    ];
+
+    let expected = DbEventVec {
+        source: vec!["foo".try_into().unwrap(), "bar".try_into().unwrap()],
+        semantics: vec![
+            "foo.semantics".try_into().unwrap(),
+            "bar.semantics".try_into().unwrap(),
+        ],
+        name: vec![
+            "foo.name".try_into().unwrap(),
+            "bar.name".try_into().unwrap(),
+        ],
+        seq: vec![10, 20],
+        psn: vec![11.try_into().unwrap(), 21.try_into().unwrap()],
+        timestamp: vec![12.try_into().unwrap(), 22.try_into().unwrap()],
+        payload: vec![
+            serde_json::from_str(r#"{"foo":"foo"}"#).unwrap(),
+            serde_json::from_str(r#"{"bar":"bar"}"#).unwrap(),
+        ],
+    };
+
+    let actual: DbEventVec = (&events).into();
+
+    assert_eq!(actual, expected);
 }

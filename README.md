@@ -80,7 +80,6 @@ CREATE TABLE IF NOT EXISTS {} (
 
 ## TODO
 
-- Add tests
 - Add databases other than PostgreSQL
 - Schema migration
 - One thread/DB connection per subscription

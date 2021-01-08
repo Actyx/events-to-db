@@ -28,6 +28,12 @@ ARGS:
     <subscriptions>     [env: SUBSCRIPTIONS=]  [default: {}]
 ```
 
+## Docker usage
+
+`docker run actyx/events-to-db <options>`
+
+You can use environment variables instead of command-line options. See also [Environment variables](#environment-variables) below.
+
 ## Subscriptions
 
 The subscriptions are given as zero or more JSON objects, each of which can have any of the following keys:
@@ -61,7 +67,7 @@ CREATE TABLE IF NOT EXISTS {} (
     source text not null,      -- Event source ID
     semantics text not null,   -- Event source semantics
     name text not null,        -- Event source name
-    seq bigint not null,       -- Event sequence number within its stream
+    seq bigint not null,       -- Event Lamport timestamp (named seq for historical reasons)
     psn bigint not null,       -- Event offset (named PSN for historical reasons)
     timestamp bigint not null, -- Event wall-clock timestamp in microseconds
     payload jsonb,             -- Event payload

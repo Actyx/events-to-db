@@ -2,7 +2,7 @@ use crate::postgres::Postgres;
 use actyxos_sdk::event_service::{EventService, Subscription};
 use anyhow::Result;
 use backtrace::Backtrace;
-use db::{Db, DbConnection, DbEvent};
+use db::{Db, DbConnection};
 use env_logger::Env;
 use futures::{future::FutureExt, stream::StreamExt};
 use futures_batch::ChunksTimeoutStreamExt;
@@ -103,7 +103,6 @@ async fn run_pipeline<C: DbConnection + 'static>(
     event_service
         .subscribe_from(db_offsets, subscriptions)
         .await?
-        .map(|e| -> DbEvent { e.into() })
         .chunks_timeout(max_batch_records, Duration::new(max_batch_seconds, 0))
         .for_each(|chunk| db.insert(chunk).map(|x| x.unwrap()))
         .await;

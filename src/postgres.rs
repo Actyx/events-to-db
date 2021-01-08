@@ -1,13 +1,63 @@
-use std::{collections::BTreeMap, convert::TryFrom, time::Instant};
-
-use actyxos_sdk::{event::SourceId, Offset, OffsetMap};
+use crate::db::{Db, DbConnection};
+use actyxos_sdk::{
+    event::{Event, SourceId, StreamInfo},
+    LamportTimestamp, Offset, OffsetMap, Payload,
+};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio_postgres::{types::Type, NoTls, Row};
+use serde_json::Value;
+use std::{
+    collections::BTreeMap,
+    convert::{TryFrom, TryInto},
+    time::Instant,
+};
+use tokio_postgres::{types::Type, NoTls};
 use tokio_postgres::{Client, Statement};
 use tracing::{debug, info};
 
-use crate::db::{Db, DbConnection, DbEvent, DbEventVec};
+#[derive(Debug, PartialEq)]
+pub struct DbEventVec<'a> {
+    pub sources: Vec<&'a str>,
+    pub semantics: Vec<&'a str>,
+    pub names: Vec<&'a str>,
+    pub lamports: Vec<i64>,
+    pub offsets: Vec<i64>,
+    pub timestamps: Vec<i64>,
+    pub payloads: Vec<Value>,
+}
+
+impl<'a> DbEventVec<'a> {
+    pub fn empty(capacity: usize) -> DbEventVec<'a> {
+        DbEventVec {
+            sources: Vec::with_capacity(capacity),
+            semantics: Vec::with_capacity(capacity),
+            names: Vec::with_capacity(capacity),
+            lamports: Vec::with_capacity(capacity),
+            offsets: Vec::with_capacity(capacity),
+            timestamps: Vec::with_capacity(capacity),
+            payloads: Vec::with_capacity(capacity),
+        }
+    }
+}
+
+impl<'a> From<&'a Vec<Event<Payload>>> for DbEventVec<'a> {
+    fn from(events: &'a Vec<Event<Payload>>) -> DbEventVec<'a> {
+        let mut rows = DbEventVec::empty(events.len());
+        for e in events {
+            rows.sources.push(e.stream.source.as_str());
+            rows.semantics.push(e.stream.semantics.as_str());
+            rows.names.push(e.stream.name.as_str());
+            rows.lamports.push(e.lamport.as_i64());
+            rows.offsets.push((e.offset - Offset::ZERO) as i64);
+            rows.timestamps.push(e.timestamp.as_i64());
+
+            // TODO What should we do if extract() fails? It should NEVER fail as long as the payload is JSON, but...
+            let ev: Event<Value> = e.extract().unwrap();
+            rows.payloads.push(ev.payload);
+        }
+        rows
+    }
+}
 
 pub struct PostgresConnection {
     client: Client,
@@ -73,14 +123,8 @@ impl Db<PostgresConnection> for Postgres {
             "#,
             self.table
         );
-        let create_table_statement = client
-            .prepare(&*create_table_sql)
-            .await
-            .expect("Could not prepare CREATE TABLE statement");
-        client
-            .execute(&create_table_statement, &[])
-            .await
-            .expect("Could not CREATE TABLE");
+        let create_table_statement = client.prepare(&*create_table_sql).await?;
+        client.execute(&create_table_statement, &[]).await?;
         info!("Created table");
 
         let sql = format!(
@@ -112,50 +156,49 @@ impl Db<PostgresConnection> for Postgres {
 
 #[async_trait]
 impl DbConnection for PostgresConnection {
-    async fn insert(&self, items: Vec<DbEvent>) -> Result<()> {
+    async fn insert(&self, items: Vec<Event<Payload>>) -> Result<()> {
         let start = Instant::now();
 
-        debug!("Preparing {} events", items.len());
+        let num_rows = items.len();
+        debug!("Preparing {} events", num_rows);
         let rows: DbEventVec = (&items).into();
-        let rows_suffix = if items.len() > 1 { "s" } else { "" };
+        let rows_suffix = if num_rows > 1 { "s" } else { "" };
 
-        let mut sources = rows.source.clone();
-        sources.sort();
+        let mut sources = rows.sources.clone();
+        sources.sort_unstable();
         sources.dedup();
         let sources_suffix = if sources.len() > 1 { "s" } else { "" };
+        let sources = sources.join(", ");
 
         debug!(
             "About to write {} record{} into DB. Source{}: {}",
-            items.len(),
-            rows_suffix,
-            sources_suffix,
-            sources.join(", "),
+            num_rows, rows_suffix, sources_suffix, sources,
         );
         self.client
             .execute(
                 &self.insert_stmt,
                 // Make sure that the order of the fields here matches the INSERT statement in the connect() method above
                 &[
-                    &rows.source,
+                    &rows.sources,
                     &rows.semantics,
-                    &rows.name,
-                    &rows.seq,
-                    &rows.psn,
-                    &rows.timestamp,
-                    &rows.payload,
+                    &rows.names,
+                    &rows.lamports,
+                    &rows.offsets,
+                    &rows.timestamps,
+                    &rows.payloads,
                 ],
             )
             .await?;
 
-        let elapsed = start.elapsed().as_millis() as usize;
+        let elapsed = start.elapsed().as_millis();
         info!(
             "Wrote {} record{} in {} ms ({} records/sec). Source{}: {}",
-            items.len(),
+            num_rows,
             rows_suffix,
             elapsed,
-            (items.len() as f64 / (elapsed as f64 / 1_000.0)) as u64,
+            num_rows as u128 * 1_000 / elapsed,
             sources_suffix,
-            sources.join(", "),
+            sources,
         );
 
         Ok(())
@@ -167,17 +210,8 @@ impl DbConnection for PostgresConnection {
             "SELECT source, MAX(psn) FROM {} GROUP BY source",
             self.table
         );
-        let query = self
-            .client
-            .prepare(&*sql)
-            .await
-            .expect("Could not prepare SELECT for getting the PSN map");
-
-        let rows: Vec<Row> = self
-            .client
-            .query(&query, &[])
-            .await
-            .expect("Could not execute SELECT to get initial PSN map");
+        let query = self.client.prepare(&*sql).await?;
+        let rows = self.client.query(&query, &[]).await?;
 
         let offsets: BTreeMap<_, _> = rows
             .into_iter()
@@ -193,4 +227,49 @@ impl DbConnection for PostgresConnection {
 
         Ok(OffsetMap::from(offsets))
     }
+}
+
+#[test]
+fn convert_events_to_db_event_vec() {
+    let events = vec![
+        Event {
+            lamport: LamportTimestamp::new(10),
+            stream: StreamInfo {
+                semantics: "foo.semantics".try_into().unwrap(),
+                name: "foo.name".try_into().unwrap(),
+                source: "foo".try_into().unwrap(),
+            },
+            timestamp: 12.try_into().unwrap(),
+            offset: 11.try_into().unwrap(),
+            payload: Payload::from_json_str(r#"{"foo":"foo"}"#).unwrap(),
+        },
+        Event {
+            lamport: LamportTimestamp::new(20),
+            stream: StreamInfo {
+                semantics: "bar.semantics".try_into().unwrap(),
+                name: "bar.name".try_into().unwrap(),
+                source: "bar".try_into().unwrap(),
+            },
+            timestamp: 22.try_into().unwrap(),
+            offset: 21.try_into().unwrap(),
+            payload: Payload::from_json_str(r#"{"bar":"bar"}"#).unwrap(),
+        },
+    ];
+
+    let expected = DbEventVec {
+        sources: vec!["foo", "bar"],
+        semantics: vec!["foo.semantics", "bar.semantics"],
+        names: vec!["foo.name", "bar.name"],
+        lamports: vec![10, 20],
+        offsets: vec![11, 21],
+        timestamps: vec![12, 22],
+        payloads: vec![
+            serde_json::from_str(r#"{"foo":"foo"}"#).unwrap(),
+            serde_json::from_str(r#"{"bar":"bar"}"#).unwrap(),
+        ],
+    };
+
+    let actual: DbEventVec = (&events).into();
+
+    assert_eq!(actual, expected);
 }

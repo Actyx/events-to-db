@@ -280,7 +280,7 @@ mod tests {
             ],
         };
 
-        let actual: DbEventVec = (&events).into();
+        let actual: DbEventVec = DbEventVec::from(&*events);
 
         assert_eq!(actual, expected);
     }

@@ -1,0 +1,10 @@
+/target
+/diff_db*
+apps/*/app/com.actyx.*.tar.gz
+apps/*/com.actyx.*.tar.gz
+event-projector-cta
+*.iml
+.idea/
+db.sqlite*
+/.vscode/
+/.history/

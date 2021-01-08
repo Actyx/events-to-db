@@ -1,19 +1,16 @@
 use crate::db::{Db, DbConnection};
 use actyxos_sdk::{
-    event::{Event, SourceId, StreamInfo},
-    LamportTimestamp, Offset, OffsetMap, Payload,
+    event::{Event, SourceId},
+    Offset, OffsetMap, Payload,
 };
 use anyhow::Result;
 use async_trait::async_trait;
+use serde_cbor::error::Error;
 use serde_json::Value;
-use std::{
-    collections::BTreeMap,
-    convert::{TryFrom, TryInto},
-    time::Instant,
-};
+use std::{collections::BTreeMap, convert::TryFrom, time::Instant};
 use tokio_postgres::{types::Type, NoTls};
 use tokio_postgres::{Client, Statement};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[derive(Debug, PartialEq)]
 pub struct DbEventVec<'a> {
@@ -40,20 +37,28 @@ impl<'a> DbEventVec<'a> {
     }
 }
 
-impl<'a> From<&'a Vec<Event<Payload>>> for DbEventVec<'a> {
-    fn from(events: &'a Vec<Event<Payload>>) -> DbEventVec<'a> {
+impl<'a> From<&'a [Event<Payload>]> for DbEventVec<'a> {
+    fn from(events: &'a [Event<Payload>]) -> DbEventVec<'a> {
         let mut rows = DbEventVec::empty(events.len());
         for e in events {
-            rows.sources.push(e.stream.source.as_str());
-            rows.semantics.push(e.stream.semantics.as_str());
-            rows.names.push(e.stream.name.as_str());
-            rows.lamports.push(e.lamport.as_i64());
-            rows.offsets.push((e.offset - Offset::ZERO) as i64);
-            rows.timestamps.push(e.timestamp.as_i64());
-
-            // TODO What should we do if extract() fails? It should NEVER fail as long as the payload is JSON, but...
-            let ev: Event<Value> = e.extract().unwrap();
-            rows.payloads.push(ev.payload);
+            let ev: Result<Event<Value>, Error> = e.extract();
+            match ev {
+                Ok(ev) => {
+                    rows.sources.push(e.stream.source.as_str());
+                    rows.semantics.push(e.stream.semantics.as_str());
+                    rows.names.push(e.stream.name.as_str());
+                    rows.lamports.push(e.lamport.as_i64());
+                    rows.offsets.push((e.offset - Offset::ZERO) as i64);
+                    rows.timestamps.push(e.timestamp.as_i64());
+                    rows.payloads.push(ev.payload);
+                }
+                Err(err) => {
+                    error!(
+                        "Error parsing payload as JSON: {:?}.\n     Event: {:?}",
+                        err, e
+                    );
+                }
+            }
         }
         rows
     }
@@ -161,8 +166,8 @@ impl DbConnection for PostgresConnection {
 
         let num_rows = items.len();
         debug!("Preparing {} events", num_rows);
-        let rows: DbEventVec = (&items).into();
         let rows_suffix = if num_rows > 1 { "s" } else { "" };
+        let rows = DbEventVec::from(&*items);
 
         let mut sources = rows.sources.clone();
         sources.sort_unstable();
@@ -229,47 +234,54 @@ impl DbConnection for PostgresConnection {
     }
 }
 
-#[test]
-fn convert_events_to_db_event_vec() {
-    let events = vec![
-        Event {
-            lamport: LamportTimestamp::new(10),
-            stream: StreamInfo {
-                semantics: "foo.semantics".try_into().unwrap(),
-                name: "foo.name".try_into().unwrap(),
-                source: "foo".try_into().unwrap(),
+#[cfg(test)]
+mod tests {
+    use actyxos_sdk::{event::StreamInfo, LamportTimestamp};
+    use std::convert::TryInto;
+
+    use super::*;
+    #[test]
+    fn convert_events_to_db_event_vec() {
+        let events = vec![
+            Event {
+                lamport: LamportTimestamp::new(10),
+                stream: StreamInfo {
+                    semantics: "foo.semantics".try_into().unwrap(),
+                    name: "foo.name".try_into().unwrap(),
+                    source: "foo".try_into().unwrap(),
+                },
+                timestamp: 12.try_into().unwrap(),
+                offset: 11.try_into().unwrap(),
+                payload: Payload::from_json_str(r#"{"foo":"foo"}"#).unwrap(),
             },
-            timestamp: 12.try_into().unwrap(),
-            offset: 11.try_into().unwrap(),
-            payload: Payload::from_json_str(r#"{"foo":"foo"}"#).unwrap(),
-        },
-        Event {
-            lamport: LamportTimestamp::new(20),
-            stream: StreamInfo {
-                semantics: "bar.semantics".try_into().unwrap(),
-                name: "bar.name".try_into().unwrap(),
-                source: "bar".try_into().unwrap(),
+            Event {
+                lamport: LamportTimestamp::new(20),
+                stream: StreamInfo {
+                    semantics: "bar.semantics".try_into().unwrap(),
+                    name: "bar.name".try_into().unwrap(),
+                    source: "bar".try_into().unwrap(),
+                },
+                timestamp: 22.try_into().unwrap(),
+                offset: 21.try_into().unwrap(),
+                payload: Payload::from_json_str(r#"{"bar":"bar"}"#).unwrap(),
             },
-            timestamp: 22.try_into().unwrap(),
-            offset: 21.try_into().unwrap(),
-            payload: Payload::from_json_str(r#"{"bar":"bar"}"#).unwrap(),
-        },
-    ];
+        ];
 
-    let expected = DbEventVec {
-        sources: vec!["foo", "bar"],
-        semantics: vec!["foo.semantics", "bar.semantics"],
-        names: vec!["foo.name", "bar.name"],
-        lamports: vec![10, 20],
-        offsets: vec![11, 21],
-        timestamps: vec![12, 22],
-        payloads: vec![
-            serde_json::from_str(r#"{"foo":"foo"}"#).unwrap(),
-            serde_json::from_str(r#"{"bar":"bar"}"#).unwrap(),
-        ],
-    };
+        let expected = DbEventVec {
+            sources: vec!["foo", "bar"],
+            semantics: vec!["foo.semantics", "bar.semantics"],
+            names: vec!["foo.name", "bar.name"],
+            lamports: vec![10, 20],
+            offsets: vec![11, 21],
+            timestamps: vec![12, 22],
+            payloads: vec![
+                serde_json::from_str(r#"{"foo":"foo"}"#).unwrap(),
+                serde_json::from_str(r#"{"bar":"bar"}"#).unwrap(),
+            ],
+        };
 
-    let actual: DbEventVec = (&events).into();
+        let actual: DbEventVec = (&events).into();
 
-    assert_eq!(actual, expected);
+        assert_eq!(actual, expected);
+    }
 }

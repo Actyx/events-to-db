@@ -1,7 +1,7 @@
 # events-to-db
 
 Copy event streams to a database table. This will connect to the ActyxOS Event Service, subscribe to event streams, and
-push the events to a database (currenty Postgres) for further analysis using SQL.
+push the events to a database (currently Postgres) for further analysis using SQL.
 
 ## Usage
 

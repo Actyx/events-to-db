@@ -196,14 +196,15 @@ impl DbConnection for PostgresConnection {
             .await?;
 
         let elapsed = start.elapsed().as_millis();
+        let rate = if elapsed == 0 {
+            "infinity".to_string()
+        } else {
+            format!("{}", num_rows as u128 * 1_000 / elapsed)
+        };
+
         info!(
             "Wrote {} record{} in {} ms ({} records/sec). Source{}: {}",
-            num_rows,
-            rows_suffix,
-            elapsed,
-            num_rows as u128 * 1_000 / elapsed,
-            sources_suffix,
-            sources,
+            num_rows, rows_suffix, elapsed, rate, sources_suffix, sources,
         );
 
         Ok(())

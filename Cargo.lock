@@ -406,7 +406,7 @@ dependencies = [
 
 [[package]]
 name = "events-to-db"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "actyxos_sdk",
  "anyhow",
@@ -420,7 +420,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "structopt",
- "tokio 1.0.1",
+ "tokio 1.2.0",
  "tokio-compat-02",
  "tokio-postgres",
  "tracing",
@@ -1795,9 +1795,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.0.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d258221f566b6c803c7b4714abadc080172b272090cdc5e244a6d4dd13c3a6bd"
+checksum = "e8190d04c665ea9e6b6a0dc45523ade572c088d2e6566244c1122671dbf4ae3a"
 dependencies = [
  "autocfg",
  "bytes 1.0.0",
@@ -1823,15 +1823,15 @@ dependencies = [
  "once_cell",
  "pin-project-lite 0.2.0",
  "tokio 0.2.23",
- "tokio 1.0.1",
+ "tokio 1.2.0",
  "tokio-stream",
 ]
 
 [[package]]
 name = "tokio-macros"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42517d2975ca3114b22a16192634e8241dc5cc1f130be194645970cc1c371494"
+checksum = "caf7b11a536f46a809a8a9f0bb4237020f70ecbf115b842360afb127ea2fda57"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1857,7 +1857,7 @@ dependencies = [
  "postgres-protocol",
  "postgres-types",
  "socket2",
- "tokio 1.0.1",
+ "tokio 1.2.0",
  "tokio-util 0.6.0",
 ]
 
@@ -1869,7 +1869,7 @@ checksum = "e4cdeb73537e63f98adcd73138af75e3f368ccaecffaa29d7eb61b9f5a440457"
 dependencies = [
  "futures-core",
  "pin-project-lite 0.2.0",
- "tokio 1.0.1",
+ "tokio 1.2.0",
 ]
 
 [[package]]
@@ -1907,7 +1907,7 @@ dependencies = [
  "futures-sink",
  "log",
  "pin-project-lite 0.2.0",
- "tokio 1.0.1",
+ "tokio 1.2.0",
  "tokio-stream",
 ]
 

@@ -1,5 +1,5 @@
 # 1: Build the binary
-FROM rust:1.48 as build
+FROM rust:1.49 as build
 WORKDIR /usr/src
 
 # 1a: Prepare for static linking
@@ -14,7 +14,7 @@ RUN curl -OL https://github.com/openssl/openssl/archive/OpenSSL_1_1_1i.zip && \
   cd openssl-OpenSSL_1_1_1i && \
   CC="musl-gcc -fPIE -pie" ./Configure no-shared no-async no-engine --prefix=/musl --openssldir=/musl/ssl -DOPENSSL_NO_SECURE_MEMORY linux-x86_64 && \
   make depend && \
-  make -j2 && \
+  make -j8 && \
   make install_sw
 
 # 1b: Download and compile Rust dependencies (and store as a separate Docker layer)
